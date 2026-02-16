@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version:*)",
+      "WebSearch",
+      "Bash(export PATH=\"/c/Program Files/Go/bin:$PATH\")",
+      "Bash(go mod tidy:*)",
+      "Bash(gcc:*)",
+      "Bash(cc:*)",
+      "Bash(go build:*)",
+      "Bash(/c/Users/Usuario/Documents/PROGRAMACION/CLI/repokit/repokit.exe suggest:*)",
+      "Bash(/c/Users/Usuario/Documents/PROGRAMACION/CLI/repokit/repokit.exe find component \"provider\")",
+      "Bash(./repokit.exe indx:*)",
+      "Bash(./repokit.exe l:*)",
+      "Bash(./repokit.exe stats:*)",
+      "Bash(./repokit.exe connect:*)",
+      "Bash(./repokit.exe projects:*)",
+      "Bash(./repokit.exe duplicates:*)",
+      "Bash(./repokit.exe:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/Go/bin:/c/Users/Usuario/go/bin\")",
+      "Bash(cmd.exe /c start \"\" \"C:\\\\Users\\\\Usuario\\\\Documents\\\\PROGRAMACION\\\\cryptoapp\\\\.repokit\\\\report.html\")"
+    ]
+  }
+}
