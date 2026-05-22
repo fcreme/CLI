@@ -104,11 +104,14 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 
 	// Step 5: render sections
 	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Repokit Analysis"))
-	fmt.Printf("  %s %s\n", output.Dim("Repo:"), repoRoot)
-	fmt.Printf("  %s %d files indexed, %d skipped (%d components, %d hooks)\n",
+	fmt.Println(output.Banner("REPOKIT ANALYSIS", "v"+Version))
+	fmt.Println()
+	fmt.Printf("  %s %s\n", output.Dim("Repo: "), repoRoot)
+	fmt.Printf("  %s %d files indexed, %d skipped  %s %d components, %d hooks\n",
 		output.Dim("Index:"),
-		idxRes.FilesIndexed, idxRes.FilesSkipped, idxRes.Components, idxRes.Hooks)
+		idxRes.FilesIndexed, idxRes.FilesSkipped,
+		output.Dim("·"),
+		idxRes.Components, idxRes.Hooks)
 
 	renderAnalyzeStack(stack)
 
@@ -156,49 +159,58 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 // ---------- section renderers ----------
 
 func renderAnalyzeStack(items []models.StackItem) {
-	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Tech Stack"))
 	if len(items) == 0 {
-		fmt.Printf("    %s\n", output.Dim("none detected"))
+		fmt.Println()
+		fmt.Println(output.Box("Tech Stack", []string{output.Dim("none detected")}))
 		return
 	}
-	max := 8
-	if len(items) < max {
-		max = len(items)
+	maxShow := 8
+	if len(items) < maxShow {
+		maxShow = len(items)
 	}
-	for _, it := range items[:max] {
+	lines := make([]string, 0, maxShow+1)
+	for _, it := range items[:maxShow] {
 		version := it.Version
 		if version == "" {
 			version = "-"
 		}
-		fmt.Printf("    %-12s %s %s\n",
-			output.Dim(it.Category+":"),
+		lines = append(lines, fmt.Sprintf(" %-12s %-20s %s",
+			output.Dim(it.Category),
 			output.Cyan(it.Name),
-			output.Dim(version))
+			output.Dim(version)))
 	}
-	if len(items) > max {
-		fmt.Printf("    %s\n", output.Dim(fmt.Sprintf("... and %d more", len(items)-max)))
+	if len(items) > maxShow {
+		lines = append(lines, " "+output.Dim(fmt.Sprintf("... and %d more", len(items)-maxShow)))
 	}
+	fmt.Println()
+	fmt.Println(output.Box("Tech Stack", lines))
 }
 
 func renderAnalyzeHealth(score int, penalties []healthPenalty) {
 	grade, gradeColor := getGrade(score)
+	lines := []string{
+		"",
+		"  ┌───┐",
+		"  │ " + gradeColor(grade) + " │   " + output.Bold(fmt.Sprintf("%d / 100", score)),
+		"  └───┘",
+	}
+	if len(penalties) > 0 {
+		lines = append(lines, "")
+		for _, p := range penalties {
+			barLen := p.penalty
+			if barLen > 10 {
+				barLen = 10
+			}
+			bar := strings.Repeat("█", barLen)
+			lines = append(lines, fmt.Sprintf("  %s  %-22s  %-10s  %s",
+				output.Red(fmt.Sprintf("-%-2d", p.penalty)),
+				p.category,
+				output.Red(bar),
+				output.Dim(p.detail)))
+		}
+	}
 	fmt.Println()
-	fmt.Printf("  %s %s  %s\n",
-		output.Bold("Health:"),
-		gradeColor(fmt.Sprintf("  %s  ", grade)),
-		output.Bold(fmt.Sprintf("%d/100", score)))
-	if len(penalties) == 0 {
-		return
-	}
-	for _, p := range penalties {
-		bar := strings.Repeat("*", p.penalty)
-		fmt.Printf("    %s %-24s %s %s\n",
-			output.Red(fmt.Sprintf("-%-2d", p.penalty)),
-			p.category,
-			output.Red(bar),
-			output.Dim(p.detail))
-	}
+	fmt.Println(output.Box("Health", lines))
 }
 
 func renderAnalyzeTopIssues(ctx context.Context, s *store.Store) {
@@ -256,14 +268,20 @@ func renderAnalyzeTopIssues(ctx context.Context, s *store.Store) {
 	if len(issues) == 0 {
 		return
 	}
-	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Top Issues"))
+	lines := make([]string, 0, len(issues))
 	for _, i := range issues {
-		fmt.Printf("    %s %s %s\n",
-			output.Yellow(fmt.Sprintf("%-12s", i.kind)),
-			output.Dim(i.file),
-			i.hint)
+		// trim file path to keep line within box
+		file := i.file
+		if len(file) > 30 {
+			file = "..." + file[len(file)-27:]
+		}
+		lines = append(lines, fmt.Sprintf(" %s  %-30s  %s",
+			output.Yellow(fmt.Sprintf("%-11s", i.kind)),
+			output.Dim(file),
+			i.hint))
 	}
+	fmt.Println()
+	fmt.Println(output.Box("Top Issues", lines))
 }
 
 func renderAnalyzePatterns(ctx context.Context, s *store.Store) {
@@ -280,8 +298,11 @@ func renderAnalyzePatterns(ctx context.Context, s *store.Store) {
 		var kind, desc string
 		var conf float64
 		if rows.Scan(&kind, &desc, &conf) == nil {
-			lines = append(lines, fmt.Sprintf("    %-12s %s %s",
-				output.Dim(kind+":"),
+			if len(desc) > 40 {
+				desc = desc[:37] + "..."
+			}
+			lines = append(lines, fmt.Sprintf(" %-14s %-40s %s",
+				output.Dim(kind),
 				desc,
 				output.Dim(fmt.Sprintf("(%.0f%%)", conf*100))))
 		}
@@ -290,10 +311,7 @@ func renderAnalyzePatterns(ctx context.Context, s *store.Store) {
 		return
 	}
 	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Patterns"))
-	for _, l := range lines {
-		fmt.Println(l)
-	}
+	fmt.Println(output.Box("Patterns", lines))
 }
 
 func renderAnalyzeDeps(ctx context.Context, s *store.Store) {
@@ -312,22 +330,26 @@ func renderAnalyzeDeps(ctx context.Context, s *store.Store) {
 	}
 	sort.Strings(orphans)
 
-	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Dependencies"))
+	var lines []string
 	if len(cycles) == 0 {
-		fmt.Printf("    %s no circular cycles\n", output.Green("OK"))
+		lines = append(lines, " "+output.Green("✓")+" no circular cycles")
 	} else {
-		fmt.Printf("    %s %d circular cycle(s)\n", output.Red("!!"), len(cycles))
+		lines = append(lines, " "+output.Red("✗")+fmt.Sprintf(" %d circular cycle(s)", len(cycles)))
 		for i, c := range cycles {
 			if i >= 3 {
-				fmt.Printf("    %s\n", output.Dim(fmt.Sprintf("... %d more cycles", len(cycles)-3)))
+				lines = append(lines, " "+output.Dim(fmt.Sprintf("   ... %d more cycles", len(cycles)-3)))
 				break
 			}
-			fmt.Printf("      %s %s\n", output.Red("->"), strings.Join(c, " -> "))
+			chain := strings.Join(c, " → ")
+			if len(chain) > 60 {
+				chain = chain[:57] + "..."
+			}
+			lines = append(lines, "   "+output.Red("↳")+" "+chain)
 		}
 	}
-	fmt.Printf("    %s %d entry-point files (no internal importers)\n",
-		output.Dim("--"), len(orphans))
+	lines = append(lines, " "+output.Dim("·")+fmt.Sprintf(" %d entry-point files (no internal importers)", len(orphans)))
+	fmt.Println()
+	fmt.Println(output.Box("Dependencies", lines))
 }
 
 func renderAnalyzeDuplicates(ctx context.Context, s *store.Store) {
@@ -352,23 +374,24 @@ func renderAnalyzeDuplicates(ctx context.Context, s *store.Store) {
 	}
 	sort.Slice(pairs, func(i, j int) bool { return pairs[i].score > pairs[j].score })
 
-	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Duplicates"))
+	var lines []string
 	if len(pairs) == 0 {
-		fmt.Printf("    %s no high-similarity pairs (threshold 70%%)\n", output.Green("OK"))
-		return
+		lines = append(lines, " "+output.Green("✓")+" no high-similarity pairs (threshold 70%)")
+	} else {
+		lines = append(lines, " "+output.Yellow("⚠")+fmt.Sprintf(" %d similar pair(s) ≥70%%", len(pairs)))
+		maxShow := 3
+		if len(pairs) < maxShow {
+			maxShow = len(pairs)
+		}
+		for _, p := range pairs[:maxShow] {
+			lines = append(lines, fmt.Sprintf("   %s ↔ %s %s",
+				output.Cyan(p.a),
+				output.Cyan(p.b),
+				output.Dim(fmt.Sprintf("(%.0f%%)", p.score*100))))
+		}
 	}
-	fmt.Printf("    %s %d similar pair(s) >=70%%\n", output.Yellow("--"), len(pairs))
-	max := 3
-	if len(pairs) < max {
-		max = len(pairs)
-	}
-	for _, p := range pairs[:max] {
-		fmt.Printf("      %s <-> %s %s\n",
-			output.Cyan(p.a),
-			output.Cyan(p.b),
-			output.Dim(fmt.Sprintf("(%.0f%%)", p.score*100)))
-	}
+	fmt.Println()
+	fmt.Println(output.Box("Duplicates", lines))
 }
 
 // ---------- health-score computation (same logic as health.go) ----------

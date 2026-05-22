@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/fatih/color"
 )
@@ -14,15 +15,22 @@ import (
 // ansiRe matches ANSI escape sequences for stripping.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// visibleLen returns the length of a string excluding ANSI escape codes.
+// visibleLen returns the visible width of a string in terminal cells,
+// excluding ANSI escape codes. Counts runes, treating each rune as width 1.
+// (Does not handle wide-East-Asian or emoji correctly, but works for
+// box-drawing chars, arrows, and most symbols we use.)
 func visibleLen(s string) int {
-	return len(ansiRe.ReplaceAllString(s, ""))
+	return utf8.RuneCountInString(ansiRe.ReplaceAllString(s, ""))
 }
 
-// padRight pads a string to the given visible width, accounting for ANSI codes.
+// padRight pads a string with spaces to the given visible width.
+// If the string is already at or beyond the target width, returns it as-is.
 func padRight(s string, visWidth int) string {
-	extra := len(s) - visibleLen(s)
-	return fmt.Sprintf("%-*s", visWidth+extra, s)
+	vl := visibleLen(s)
+	if vl >= visWidth {
+		return s
+	}
+	return s + strings.Repeat(" ", visWidth-vl)
 }
 
 var (
@@ -160,6 +168,89 @@ func (t *Table) Print() {
 		}
 		fmt.Fprintln(Writer, line)
 	}
+}
+
+// BoxWidth is the total visual width of Box and Banner output (including borders).
+const BoxWidth = 74
+
+const (
+	bcTL = "┌"
+	bcTR = "┐"
+	bcBL = "└"
+	bcBR = "┘"
+	bcH  = "─"
+	bcV  = "│"
+
+	bnTL = "╔"
+	bnTR = "╗"
+	bnBL = "╚"
+	bnBR = "╝"
+	bnH  = "═"
+	bnV  = "║"
+)
+
+// Banner returns a double-line title block with the given title and optional subtitle.
+// Subtitle is right-aligned. Returns empty string in JSON mode.
+func Banner(title, subtitle string) string {
+	if JSONMode {
+		return ""
+	}
+	inner := BoxWidth - 2
+	top := bnTL + strings.Repeat(bnH, inner) + bnTR
+	bot := bnBL + strings.Repeat(bnH, inner) + bnBR
+
+	titlePart := "  " + Bold(title)
+	subPart := ""
+	if subtitle != "" {
+		subPart = Dim(subtitle) + "  "
+	}
+	pad := inner - visibleLen(titlePart) - visibleLen(subPart)
+	if pad < 1 {
+		pad = 1
+	}
+	middle := bnV + titlePart + strings.Repeat(" ", pad) + subPart + bnV
+	return top + "\n" + middle + "\n" + bot
+}
+
+// Box returns a labeled single-line bordered section.
+// Each line in `lines` should be at most (BoxWidth - 4) visible characters;
+// longer lines will overflow the right border.
+// Returns empty string in JSON mode.
+func Box(title string, lines []string) string {
+	if JSONMode {
+		return ""
+	}
+	inner := BoxWidth - 2
+	label := " " + Bold(title) + " "
+	fill := inner - 1 - visibleLen(label)
+	if fill < 0 {
+		fill = 0
+	}
+	top := bcTL + bcH + label + strings.Repeat(bcH, fill) + bcTR
+	bot := bcBL + strings.Repeat(bcH, inner) + bcBR
+
+	contentW := inner - 2
+	var sb strings.Builder
+	sb.WriteString(top)
+	sb.WriteString("\n")
+	for _, ln := range lines {
+		sb.WriteString(bcV)
+		sb.WriteString(" ")
+		sb.WriteString(padRight(ln, contentW))
+		sb.WriteString(" ")
+		sb.WriteString(bcV)
+		sb.WriteString("\n")
+	}
+	sb.WriteString(bot)
+	return sb.String()
+}
+
+// Divider returns a horizontal dim line of standard box width.
+func Divider() string {
+	if JSONMode {
+		return ""
+	}
+	return Dim(strings.Repeat(bcH, BoxWidth))
 }
 
 func (t *Table) printAsJSON() {
