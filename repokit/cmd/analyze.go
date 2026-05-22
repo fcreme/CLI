@@ -3,11 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/fcreme/CLI/repokit/internal/config"
 	"github.com/fcreme/CLI/repokit/internal/connect"
@@ -19,8 +23,10 @@ import (
 )
 
 var (
-	analyzeHTML  bool
-	analyzeQuick bool
+	analyzeHTML       bool
+	analyzeQuick      bool
+	analyzeWatch      bool
+	analyzeDebounceMs int
 )
 
 var analyzeCmd = &cobra.Command{
@@ -40,24 +46,28 @@ Exit code reflects health: 0 = grade A/B, 1 = C/D, 2 = F. Useful for CI.
 Flags:
   --html       Also generate the full HTML report
   --quick      Skip cycle detection and duplicate analysis (faster)
+  --watch      Re-run the analysis on every source file change (Ctrl+C to exit)
 
 Examples:
   cd my-project && repokit analyze
   repokit analyze --html
-  repokit analyze --quick`,
+  repokit analyze --quick
+  repokit analyze --watch`,
 	RunE: runAnalyze,
 }
 
 func init() {
 	analyzeCmd.Flags().BoolVar(&analyzeHTML, "html", false, "Also generate an HTML report")
 	analyzeCmd.Flags().BoolVar(&analyzeQuick, "quick", false, "Skip slow analyses (cycles, duplicates)")
+	analyzeCmd.Flags().BoolVar(&analyzeWatch, "watch", false, "Re-run analysis on file changes")
+	analyzeCmd.Flags().IntVar(&analyzeDebounceMs, "debounce", 500, "Debounce window in ms for watch mode")
 	rootCmd.AddCommand(analyzeCmd)
 }
 
 func runAnalyze(cmd *cobra.Command, args []string) error {
 	cwd, _ := os.Getwd()
 
-	// Step 1: resolve or auto-connect
+	// Resolve or auto-connect
 	repoRoot, err := config.FindRepoRoot(cwd)
 	if err != nil {
 		output.PrintInfo("No repokit project found, connecting %s ...", cwd)
@@ -70,7 +80,6 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		output.PrintSuccess("Connected: %s", repoRoot)
 	}
 
-	// Step 2: open store
 	s, err := store.Open(config.DBPath(repoRoot))
 	if err != nil {
 		output.PrintError("Opening index: %v", err)
@@ -79,9 +88,46 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	defer s.Close()
 
 	ctx := context.Background()
+
+	// First pass
+	score, err := runAnalysisPass(ctx, s, repoRoot, 1)
+	if err != nil {
+		return err
+	}
+
+	// Watch mode takes over and never returns until Ctrl+C
+	if analyzeWatch {
+		return runAnalyzeWatchLoop(ctx, s, repoRoot)
+	}
+
+	// Optional HTML
+	if analyzeHTML {
+		data, err := gatherReportData(ctx, s, repoRoot)
+		if err != nil {
+			output.PrintWarning("HTML export skipped: %v", err)
+		} else if path, err := exportHTML(data, repoRoot); err != nil {
+			output.PrintWarning("HTML export failed: %v", err)
+		} else {
+			output.PrintSuccess("HTML report: %s", path)
+		}
+	}
+
+	// Exit code reflects health (release store first)
+	_ = s.Close()
+	switch {
+	case score < 60:
+		os.Exit(2)
+	case score < 80:
+		os.Exit(1)
+	}
+	return nil
+}
+
+// runAnalysisPass runs one full index + render cycle and returns the health score.
+// passNum is shown in the banner subtitle so users can see live iteration count.
+func runAnalysisPass(ctx context.Context, s *store.Store, repoRoot string, passNum int) (int, error) {
 	start := time.Now()
 
-	// Step 3: incremental index
 	fmt.Println()
 	fmt.Printf("  %s\n", output.Bold("Indexing"))
 	idxRes, err := indexer.Index(ctx, repoRoot, s, indexer.IndexOptions{
@@ -93,18 +139,20 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	})
 	if err != nil {
 		output.PrintError("Indexing failed: %v", err)
-		return err
+		return 0, err
 	}
 	fmt.Println()
 	_ = s.SetMeta(ctx, "last_indexed_at", time.Now().UTC().Format(time.RFC3339))
 
-	// Step 4: detect stack + patterns
 	stack, _ := detector.DetectStack(ctx, repoRoot, s)
 	_, _ = detector.DetectPatterns(ctx, repoRoot, s)
 
-	// Step 5: render sections
+	subtitle := "v" + Version
+	if analyzeWatch {
+		subtitle = fmt.Sprintf("pass #%d · %s", passNum, time.Now().Format("15:04:05"))
+	}
 	fmt.Println()
-	fmt.Println(output.Banner("REPOKIT ANALYSIS", "v"+Version))
+	fmt.Println(output.Banner("REPOKIT ANALYSIS", subtitle))
 	fmt.Println()
 	fmt.Printf("  %s %s\n", output.Dim("Repo: "), repoRoot)
 	fmt.Printf("  %s %d files indexed, %d skipped  %s %d components, %d hooks\n",
@@ -132,28 +180,100 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	elapsed := time.Since(start).Round(time.Millisecond)
 	fmt.Println()
 	fmt.Printf("  %s %s\n\n", output.Dim("Analysis complete in"), elapsed)
+	return score, nil
+}
 
-	// Step 6: optional HTML report
-	if analyzeHTML {
-		data, err := gatherReportData(ctx, s, repoRoot)
-		if err != nil {
-			output.PrintWarning("HTML export skipped: %v", err)
-		} else if path, err := exportHTML(data, repoRoot); err != nil {
-			output.PrintWarning("HTML export failed: %v", err)
-		} else {
-			output.PrintSuccess("HTML report: %s", path)
+// runAnalyzeWatchLoop watches source files and re-runs analysis on change.
+func runAnalyzeWatchLoop(ctx context.Context, s *store.Store, repoRoot string) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		output.PrintError("Creating watcher: %v", err)
+		return err
+	}
+	defer watcher.Close()
+
+	// Recursively add directories, skipping noisy paths.
+	ignored := map[string]bool{
+		"node_modules": true,
+		".git":         true,
+		".repokit":     true,
+		"dist":         true,
+		"build":        true,
+		".next":        true,
+		".turbo":       true,
+		"coverage":     true,
+		".cache":       true,
+		"out":          true,
+	}
+	walkErr := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		if ignored[d.Name()] {
+			return filepath.SkipDir
+		}
+		_ = watcher.Add(path)
+		return nil
+	})
+	if walkErr != nil {
+		output.PrintWarning("Some directories couldn't be watched: %v", walkErr)
+	}
+
+	footer := output.Dim("─── Watching for changes (Ctrl+C to exit) ───")
+	fmt.Println(footer)
+
+	debounce := time.Duration(analyzeDebounceMs) * time.Millisecond
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+	defer signal.Stop(sigs)
+
+	passNum := 2
+	for {
+		select {
+		case <-sigs:
+			fmt.Println()
+			output.PrintInfo("Watch stopped")
+			fmt.Println()
+			return nil
+		case ev, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+			if !isAnalyzableSource(ev.Name) {
+				continue
+			}
+			// Coalesce bursts of events into a single rerun
+			timer.Reset(debounce)
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			output.PrintWarning("Watch error: %v", err)
+		case <-timer.C:
+			clearAnalyzeScreen()
+			if _, err := runAnalysisPass(ctx, s, repoRoot, passNum); err != nil {
+				output.PrintError("Pass failed: %v", err)
+			}
+			passNum++
+			fmt.Println(footer)
 		}
 	}
+}
 
-	// Step 7: exit code reflects health (release store first)
-	_ = s.Close()
-	switch {
-	case score < 60:
-		os.Exit(2)
-	case score < 80:
-		os.Exit(1)
+func clearAnalyzeScreen() {
+	// ANSI: clear screen + cursor home
+	fmt.Print("\x1b[2J\x1b[H")
+}
+
+func isAnalyzableSource(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+		return true
 	}
-	return nil
+	return false
 }
 
 // ---------- section renderers ----------

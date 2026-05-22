@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/fatih/color"
+	"golang.org/x/term"
 )
 
 // ansiRe matches ANSI escape sequences for stripping.
@@ -171,7 +172,30 @@ func (t *Table) Print() {
 }
 
 // BoxWidth is the total visual width of Box and Banner output (including borders).
-const BoxWidth = 74
+// Auto-detected from the terminal at startup; falls back to 74 if detection fails.
+// Clamped to [60, 100] so boxes stay readable on both narrow and wide terminals.
+var BoxWidth = detectBoxWidth()
+
+func detectBoxWidth() int {
+	const (
+		fallback = 74
+		minWidth = 60
+		maxWidth = 100
+		margin   = 4 // leave a few cols of breathing room
+	)
+	w, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || w <= 0 {
+		return fallback
+	}
+	target := w - margin
+	if target < minWidth {
+		return minWidth
+	}
+	if target > maxWidth {
+		return maxWidth
+	}
+	return target
+}
 
 const (
 	bcTL = "┌"
