@@ -39,6 +39,10 @@ func printWelcome() {
 	fmt.Printf("  %s\n", output.Dim("repo-aware developer assistant"))
 	fmt.Println()
 
+	fmt.Printf("  %s\n", output.Bold("Quick Start:"))
+	fmt.Printf("    %-25s %s\n", output.Cyan("analyze"), output.Bold("Full one-shot analysis of cwd")+output.Dim(" (alias: a)"))
+	fmt.Println()
+
 	fmt.Printf("  %s\n", output.Bold("Getting Started:"))
 	fmt.Printf("    %-25s %s\n", output.Cyan("connect <path>"), "Connect to a repository")
 	fmt.Printf("    %-25s %s\n", output.Cyan("index"), "Index the repository")
