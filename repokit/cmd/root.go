@@ -62,6 +62,7 @@ func printWelcome() {
 	fmt.Printf("    %-25s %s\n", output.Cyan("health"), "Project health score "+output.Dim("(alias: h)"))
 	fmt.Printf("    %-25s %s\n", output.Cyan("stats"), "Codebase analytics")
 	fmt.Printf("    %-25s %s\n", output.Cyan("duplicates"), "Find similar components "+output.Dim("(alias: dup)"))
+	fmt.Printf("    %-25s %s\n", output.Cyan("diff [base]"), "Compare branch against base")
 	fmt.Printf("    %-25s %s\n", output.Cyan("check"), "CI/CD quality gate")
 	fmt.Println()
 

@@ -95,25 +95,59 @@ Examples:
 }
 
 type reportData struct {
-	ProjectName   string
-	ProjectPath   string
-	GeneratedAt   string
-	Version       string
-	HealthScore   int
-	HealthGrade   string
-	TotalFiles    int
-	TotalComps    int
-	TotalHooks    int
-	TotalImports  int
-	TotalExports  int
-	TotalTypes    int
-	ExtImports    int
-	IntImports    int
-	Stack         []stackEntry
-	Components    []reportComponent
-	BiggestComps  []reportComponent
-	FolderCounts  []folderCount
-	LintIssues    int
+	ProjectName  string
+	ProjectPath  string
+	GeneratedAt  string
+	Version      string
+	HealthScore  int
+	HealthGrade  string
+	TotalFiles   int
+	TotalComps   int
+	TotalHooks   int
+	TotalImports int
+	TotalExports int
+	TotalTypes   int
+	ExtImports   int
+	IntImports   int
+	Stack        []stackEntry
+	Components   []reportComponent
+	BiggestComps []reportComponent
+	FolderCounts []folderCount
+	LintIssues   int
+
+	// New sections
+	TopIssues      []reportIssue
+	Patterns       []reportPattern
+	CycleCount     int
+	Cycles         []reportCycle
+	OrphanCount    int
+	OrphanFiles    []string
+	DuplicateCount int
+	Duplicates     []reportDupPair
+}
+
+type reportIssue struct {
+	Severity string
+	Kind     string
+	Name     string
+	Path     string
+	Detail   string
+}
+
+type reportPattern struct {
+	Kind        string
+	Description string
+	Confidence  int
+}
+
+type reportCycle struct {
+	Files []string
+}
+
+type reportDupPair struct {
+	A     string
+	B     string
+	Score int
 }
 
 type stackEntry struct {
@@ -247,6 +281,119 @@ func gatherReportData(ctx context.Context, s *store.Store, repoRoot string) (*re
 	sort.Slice(data.FolderCounts, func(i, j int) bool {
 		return data.FolderCounts[i].Count > data.FolderCounts[j].Count
 	})
+
+	// Top issues (oversized + prop-bloated)
+	issueRows, err := s.DB().QueryContext(ctx, `
+		SELECT f.path, c.name, (c.line_end - c.line_start) AS sz
+		FROM components c JOIN files f ON c.file_id = f.id
+		WHERE (c.line_end - c.line_start) > 300
+		ORDER BY sz DESC LIMIT 10`)
+	if err == nil {
+		for issueRows.Next() {
+			var path, name string
+			var sz int
+			if issueRows.Scan(&path, &name, &sz) == nil {
+				data.TopIssues = append(data.TopIssues, reportIssue{
+					Severity: "warn",
+					Kind:     "oversized",
+					Name:     name,
+					Path:     path,
+					Detail:   fmt.Sprintf("%d lines", sz),
+				})
+			}
+		}
+		issueRows.Close()
+	}
+	propRows, err := s.DB().QueryContext(ctx, `
+		SELECT f.path, td.name, COUNT(p.id) AS n
+		FROM type_definitions td
+		JOIN files f ON td.file_id = f.id
+		JOIN props p ON p.type_def_id = td.id
+		WHERE td.name LIKE '%Props%'
+		GROUP BY td.id HAVING n > 10
+		ORDER BY n DESC LIMIT 10`)
+	if err == nil {
+		for propRows.Next() {
+			var path, name string
+			var n int
+			if propRows.Scan(&path, &name, &n) == nil {
+				data.TopIssues = append(data.TopIssues, reportIssue{
+					Severity: "warn",
+					Kind:     "prop bloat",
+					Name:     name,
+					Path:     path,
+					Detail:   fmt.Sprintf("%d props", n),
+				})
+			}
+		}
+		propRows.Close()
+	}
+
+	// Patterns
+	patRows, err := s.DB().QueryContext(ctx, `
+		SELECT kind, description, confidence FROM patterns
+		ORDER BY confidence DESC LIMIT 12`)
+	if err == nil {
+		for patRows.Next() {
+			var kind, desc string
+			var conf float64
+			if patRows.Scan(&kind, &desc, &conf) == nil {
+				data.Patterns = append(data.Patterns, reportPattern{
+					Kind:        kind,
+					Description: desc,
+					Confidence:  int(conf * 100),
+				})
+			}
+		}
+		patRows.Close()
+	}
+
+	// Cycles + orphans
+	if edges, err := s.GetImportGraph(ctx); err == nil {
+		g := buildGraph(edges)
+		cycles := detectCycles(g)
+		data.CycleCount = len(cycles)
+		maxCycles := 5
+		if len(cycles) < maxCycles {
+			maxCycles = len(cycles)
+		}
+		for _, c := range cycles[:maxCycles] {
+			data.Cycles = append(data.Cycles, reportCycle{Files: c})
+		}
+		for file := range g.allFiles {
+			if len(g.reverse[file]) == 0 && len(g.forward[file]) > 0 {
+				data.OrphanCount++
+				if len(data.OrphanFiles) < 10 {
+					data.OrphanFiles = append(data.OrphanFiles, file)
+				}
+			}
+		}
+	}
+
+	// Duplicates
+	if components, err := loadComponentsForComparison(ctx, s); err == nil && len(components) >= 2 {
+		const threshold = 0.7
+		var pairs []reportDupPair
+		for i := 0; i < len(components); i++ {
+			for j := i + 1; j < len(components); j++ {
+				sc := compareSimilarity(&components[i], &components[j])
+				if sc >= threshold {
+					pairs = append(pairs, reportDupPair{
+						A:     components[i].name,
+						B:     components[j].name,
+						Score: int(sc * 100),
+					})
+				}
+			}
+		}
+		sort.Slice(pairs, func(i, j int) bool { return pairs[i].Score > pairs[j].Score })
+		data.DuplicateCount = len(pairs)
+		maxShow := 10
+		if len(pairs) < maxShow {
+			maxShow = len(pairs)
+		}
+		data.Duplicates = pairs[:maxShow]
+	}
 
 	return data, nil
 }
@@ -790,9 +937,13 @@ var htmlTemplate = `<!DOCTYPE html>
 
 <div class="nav">
   <a href="#health">Health</a>
+  {{if .TopIssues}}<a href="#issues">Issues</a>{{end}}
   <a href="#overview">Overview</a>
   {{if .Stack}}<a href="#stack">Stack</a>{{end}}
   {{if .BiggestComps}}<a href="#biggest">Biggest</a>{{end}}
+  {{if .Patterns}}<a href="#patterns">Patterns</a>{{end}}
+  {{if or .Cycles .OrphanFiles}}<a href="#deps">Deps</a>{{end}}
+  {{if .Duplicates}}<a href="#duplicates">Duplicates</a>{{end}}
   {{if .FolderCounts}}<a href="#folders">Folders</a>{{end}}
   {{if .Components}}<a href="#components">Components</a>{{end}}
   <a href="#imports">Imports</a>
@@ -836,6 +987,28 @@ var htmlTemplate = `<!DOCTYPE html>
       </div>
     </div>
   </div>
+
+  {{if .TopIssues}}
+  <!-- Top Issues -->
+  <div class="section" id="issues">
+    <div class="section-title">Top Issues ({{len .TopIssues}})</div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kind</th><th>Name</th><th>Detail</th><th>Path</th></tr></thead>
+      <tbody>
+      {{range .TopIssues}}
+      <tr>
+        <td><span class="badge badge-kind">{{.Kind}}</span></td>
+        <td><strong>{{.Name}}</strong></td>
+        <td class="muted">{{.Detail}}</td>
+        <td class="muted">{{.Path}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {{end}}
 
   <!-- Overview Stats -->
   <div class="section" id="overview">
@@ -885,6 +1058,86 @@ var htmlTemplate = `<!DOCTYPE html>
         <td>{{.Lines}}</td>
         <td><div class="bar-container">{{barHTML .Lines}}<span class="bar-label">{{.Lines}}</span></div></td>
         <td class="muted">{{.Path}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Patterns}}
+  <!-- Patterns -->
+  <div class="section" id="patterns">
+    <div class="section-title">Detected Patterns ({{len .Patterns}})</div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Pattern</th><th style="width:120px">Confidence</th></tr></thead>
+      <tbody>
+      {{range .Patterns}}
+      <tr>
+        <td><span class="badge badge-category">{{.Kind}}</span></td>
+        <td>{{.Description}}</td>
+        <td><div class="bar-container"><span class="bar bar-accent" style="width:{{.Confidence}}px"></span><span class="bar-label">{{.Confidence}}%</span></div></td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {{end}}
+
+  {{if or .Cycles .OrphanFiles}}
+  <!-- Dependencies -->
+  <div class="section" id="deps">
+    <div class="section-title">Dependencies</div>
+    <div class="stats-grid" style="grid-template-columns:1fr 1fr">
+      <div class="stat-card"><div class="value">{{.CycleCount}}</div><div class="stat-label">Circular cycles</div></div>
+      <div class="stat-card"><div class="value">{{.OrphanCount}}</div><div class="stat-label">Entry-point files</div></div>
+    </div>
+    {{if .Cycles}}
+    <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead><tr><th>#</th><th>Circular import chain</th></tr></thead>
+      <tbody>
+      {{range $i, $c := .Cycles}}
+      <tr>
+        <td class="muted">{{$i}}</td>
+        <td class="muted">{{range $idx, $f := $c.Files}}{{if $idx}} <span style="color:var(--red)">&rarr;</span> {{end}}<code style="color:var(--accent)">{{$f}}</code>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+    {{if .OrphanFiles}}
+    <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead><tr><th>Entry-point files (no internal importers)</th></tr></thead>
+      <tbody>
+      {{range .OrphanFiles}}
+      <tr><td class="muted"><code style="color:var(--accent)">{{.}}</code></td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .Duplicates}}
+  <!-- Duplicates -->
+  <div class="section" id="duplicates">
+    <div class="section-title">Similar Components ({{.DuplicateCount}})</div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component A</th><th>Component B</th><th style="width:160px">Similarity</th></tr></thead>
+      <tbody>
+      {{range .Duplicates}}
+      <tr>
+        <td><strong>{{.A}}</strong></td>
+        <td><strong>{{.B}}</strong></td>
+        <td><div class="bar-container"><span class="bar {{if ge .Score 85}}bar-red{{else}}bar-yellow{{end}}" style="width:{{.Score}}px"></span><span class="bar-label">{{.Score}}%</span></div></td>
       </tr>
       {{end}}
       </tbody>

@@ -63,22 +63,23 @@ Examples:
 		}
 
 		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Codebase Analytics"))
+		fmt.Println(output.Banner("CODEBASE ANALYTICS", "repokit v"+Version))
 		fmt.Println()
 
-		// Overview
-		fmt.Printf("  %s\n", output.Bold("Overview:"))
-		fmt.Printf("    Files:            %s\n", output.Cyan(fmt.Sprintf("%d", totalFiles)))
-		fmt.Printf("    Components:       %s\n", output.Cyan(fmt.Sprintf("%d", totalComponents)))
-		fmt.Printf("    Hooks:            %s\n", output.Cyan(fmt.Sprintf("%d", totalHooks)))
-		fmt.Printf("    Type definitions: %s\n", output.Cyan(fmt.Sprintf("%d", totalTypes)))
-		fmt.Printf("    Imports:          %s\n", output.Cyan(fmt.Sprintf("%d", totalImports)))
-		fmt.Printf("    Exports:          %s\n", output.Cyan(fmt.Sprintf("%d", totalExports)))
+		// Overview box
+		fmt.Println(output.Box("Overview", []string{
+			fmt.Sprintf(" %-18s %s    %-18s %s",
+				output.Dim("Files:"), output.Cyan(fmt.Sprintf("%d", totalFiles)),
+				output.Dim("Components:"), output.Cyan(fmt.Sprintf("%d", totalComponents))),
+			fmt.Sprintf(" %-18s %s    %-18s %s",
+				output.Dim("Hooks:"), output.Cyan(fmt.Sprintf("%d", totalHooks)),
+				output.Dim("Type definitions:"), output.Cyan(fmt.Sprintf("%d", totalTypes))),
+			fmt.Sprintf(" %-18s %s    %-18s %s",
+				output.Dim("Imports:"), output.Cyan(fmt.Sprintf("%d", totalImports)),
+				output.Dim("Exports:"), output.Cyan(fmt.Sprintf("%d", totalExports))),
+		}))
 
 		// Files per folder
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Files per Folder:"))
-		fmt.Println()
 		folderCounts := make(map[string]int)
 		rows, err := s.DB().QueryContext(ctx, "SELECT path FROM files")
 		if err == nil {
@@ -99,134 +100,179 @@ Examples:
 			count  int
 		}
 		var folders []folderStat
+		maxFolderCount := 0
 		for f, c := range folderCounts {
 			folders = append(folders, folderStat{f, c})
+			if c > maxFolderCount {
+				maxFolderCount = c
+			}
 		}
-		sort.Slice(folders, func(i, j int) bool {
-			return folders[i].count > folders[j].count
-		})
+		sort.Slice(folders, func(i, j int) bool { return folders[i].count > folders[j].count })
 		maxFolders := 10
 		if len(folders) < maxFolders {
 			maxFolders = len(folders)
 		}
+		var folderLines []string
 		for _, f := range folders[:maxFolders] {
-			bar := strings.Repeat("█", f.count)
-			fmt.Printf("    %s %s %s\n",
+			bar := scaleBar(f.count, maxFolderCount, 24)
+			folderLines = append(folderLines, fmt.Sprintf(" %s  %-24s  %s",
 				output.Cyan(fmt.Sprintf("%3d", f.count)),
 				output.Green(bar),
-				f.folder,
-			)
+				f.folder))
+		}
+		if len(folderLines) > 0 {
+			fmt.Println()
+			fmt.Println(output.Box("Files per Folder", folderLines))
 		}
 
-		// Biggest components (by line count)
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Biggest Components:"))
-		fmt.Println()
+		// Biggest components
+		var bigLines []string
 		bigRows, err := s.DB().QueryContext(ctx, `
 			SELECT c.name, f.path, (c.line_end - c.line_start) as lines
 			FROM components c JOIN files f ON c.file_id = f.id
-			ORDER BY lines DESC
-			LIMIT 8
-		`)
+			ORDER BY lines DESC LIMIT 8`)
+		maxLines := 1
+		var bigData []struct {
+			name, path string
+			lines      int
+		}
 		if err == nil {
 			defer bigRows.Close()
 			for bigRows.Next() {
 				var name, path string
 				var lines int
 				bigRows.Scan(&name, &path, &lines)
-				barLen := lines / 20
-				if barLen > 30 {
-					barLen = 30
+				bigData = append(bigData, struct {
+					name, path string
+					lines      int
+				}{name, path, lines})
+				if lines > maxLines {
+					maxLines = lines
 				}
-				if barLen < 1 {
-					barLen = 1
-				}
-				bar := strings.Repeat("█", barLen)
-				colorFn := output.Green
-				if lines > 300 {
-					colorFn = output.Red
-				} else if lines > 150 {
-					colorFn = output.Yellow
-				}
-				fmt.Printf("    %s %s %s %s\n",
-					output.Cyan(fmt.Sprintf("%4d", lines)),
-					colorFn(bar),
-					name,
-					output.Dim(path),
-				)
 			}
+		}
+		for _, d := range bigData {
+			bar := scaleBar(d.lines, maxLines, 24)
+			colorFn := output.Green
+			if d.lines > 300 {
+				colorFn = output.Red
+			} else if d.lines > 150 {
+				colorFn = output.Yellow
+			}
+			path := d.path
+			if len(path) > 24 {
+				path = "..." + path[len(path)-21:]
+			}
+			bigLines = append(bigLines, fmt.Sprintf(" %s  %-24s  %-16s %s",
+				output.Cyan(fmt.Sprintf("%4d", d.lines)),
+				colorFn(bar),
+				d.name,
+				output.Dim(path)))
+		}
+		if len(bigLines) > 0 {
+			fmt.Println()
+			fmt.Println(output.Box("Biggest Components", bigLines))
 		}
 
 		// Most complex files (by import count)
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Most Complex Files (by imports):"))
-		fmt.Println()
+		var complexLines []string
 		complexRows, err := s.DB().QueryContext(ctx, `
 			SELECT f.path, COUNT(i.id) as import_count
-			FROM files f
-			JOIN imports i ON i.file_id = f.id
-			GROUP BY f.id
-			ORDER BY import_count DESC
-			LIMIT 8
-		`)
+			FROM files f JOIN imports i ON i.file_id = f.id
+			GROUP BY f.id ORDER BY import_count DESC LIMIT 8`)
+		var complexData []struct {
+			path  string
+			count int
+		}
+		maxComplex := 1
 		if err == nil {
 			defer complexRows.Close()
 			for complexRows.Next() {
 				var path string
 				var count int
 				complexRows.Scan(&path, &count)
-				bar := strings.Repeat("█", count)
-				colorFn := output.Green
-				if count > 15 {
-					colorFn = output.Red
-				} else if count > 10 {
-					colorFn = output.Yellow
+				complexData = append(complexData, struct {
+					path  string
+					count int
+				}{path, count})
+				if count > maxComplex {
+					maxComplex = count
 				}
-				fmt.Printf("    %s %s %s\n",
-					output.Cyan(fmt.Sprintf("%3d", count)),
-					colorFn(bar),
-					path,
-				)
 			}
+		}
+		for _, d := range complexData {
+			bar := scaleBar(d.count, maxComplex, 24)
+			colorFn := output.Green
+			if d.count > 15 {
+				colorFn = output.Red
+			} else if d.count > 10 {
+				colorFn = output.Yellow
+			}
+			path := d.path
+			if len(path) > 36 {
+				path = "..." + path[len(path)-33:]
+			}
+			complexLines = append(complexLines, fmt.Sprintf(" %s  %-24s  %s",
+				output.Cyan(fmt.Sprintf("%3d", d.count)),
+				colorFn(bar),
+				path))
+		}
+		if len(complexLines) > 0 {
+			fmt.Println()
+			fmt.Println(output.Box("Most Complex Files (by imports)", complexLines))
 		}
 
 		// Component kind breakdown
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Component Types:"))
-		fmt.Println()
+		var kindLines []string
 		kindRows, err := s.DB().QueryContext(ctx, `
-			SELECT kind, COUNT(*) as cnt
-			FROM components
-			GROUP BY kind
-			ORDER BY cnt DESC
-		`)
+			SELECT kind, COUNT(*) as cnt FROM components GROUP BY kind ORDER BY cnt DESC`)
+		var kindData []struct {
+			kind  string
+			count int
+		}
+		maxKind := 1
 		if err == nil {
 			defer kindRows.Close()
 			for kindRows.Next() {
 				var kind string
 				var count int
 				kindRows.Scan(&kind, &count)
-				bar := strings.Repeat("█", count)
-				fmt.Printf("    %s %s %s\n",
-					output.Cyan(fmt.Sprintf("%3d", count)),
-					output.Green(bar),
-					kind,
-				)
+				kindData = append(kindData, struct {
+					kind  string
+					count int
+				}{kind, count})
+				if count > maxKind {
+					maxKind = count
+				}
 			}
 		}
+		for _, d := range kindData {
+			bar := scaleBar(d.count, maxKind, 24)
+			kindLines = append(kindLines, fmt.Sprintf(" %s  %-24s  %s",
+				output.Cyan(fmt.Sprintf("%3d", d.count)),
+				output.Green(bar),
+				d.kind))
+		}
+		if len(kindLines) > 0 {
+			fmt.Println()
+			fmt.Println(output.Box("Component Types", kindLines))
+		}
 
-		// External vs internal imports
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Import Breakdown:"))
+		// Import breakdown
 		var externalImports, internalImports int
 		s.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM imports WHERE is_external = 1").Scan(&externalImports)
 		s.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM imports WHERE is_external = 0").Scan(&internalImports)
-		fmt.Printf("    External (npm):  %s\n", output.Cyan(fmt.Sprintf("%d", externalImports)))
-		fmt.Printf("    Internal:        %s\n", output.Cyan(fmt.Sprintf("%d", internalImports)))
+		importLines := []string{
+			fmt.Sprintf(" %-18s %s", output.Dim("External (npm):"), output.Cyan(fmt.Sprintf("%d", externalImports))),
+			fmt.Sprintf(" %-18s %s", output.Dim("Internal:"), output.Cyan(fmt.Sprintf("%d", internalImports))),
+		}
 		if totalImports > 0 {
 			ratio := float64(internalImports) / float64(totalImports) * 100
-			fmt.Printf("    Internal ratio:  %s\n", output.Cyan(fmt.Sprintf("%.0f%%", ratio)))
+			importLines = append(importLines, fmt.Sprintf(" %-18s %s",
+				output.Dim("Internal ratio:"), output.Cyan(fmt.Sprintf("%.0f%%", ratio))))
 		}
+		fmt.Println()
+		fmt.Println(output.Box("Import Breakdown", importLines))
 
 		fmt.Println()
 		output.PrintHint("repokit health for project health score")
@@ -235,6 +281,22 @@ Examples:
 
 		return nil
 	},
+}
+
+// scaleBar returns a bar string scaled so that `value` maps proportionally
+// to a bar of at most `maxWidth` filled characters, given the dataset max.
+func scaleBar(value, dataMax, maxWidth int) string {
+	if dataMax <= 0 {
+		return ""
+	}
+	w := int(float64(value) / float64(dataMax) * float64(maxWidth))
+	if w < 1 && value > 0 {
+		w = 1
+	}
+	if w > maxWidth {
+		w = maxWidth
+	}
+	return strings.Repeat("█", w)
 }
 
 func init() {

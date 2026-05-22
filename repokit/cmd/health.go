@@ -219,51 +219,59 @@ Examples:
 		grade, gradeColor := getGrade(score)
 
 		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Project Health Report"))
+		fmt.Println(output.Banner("PROJECT HEALTH", "repokit v"+Version))
 		fmt.Println()
 
-		// Big score display
-		scoreStr := fmt.Sprintf("%d", score)
-		fmt.Printf("  %s  %s\n", gradeColor(fmt.Sprintf("  %s  ", grade)), output.Bold(scoreStr+"/100"))
-		fmt.Println()
-
+		// Score + grade box
+		scoreLines := []string{
+			"",
+			"  ┌───┐",
+			"  │ " + gradeColor(grade) + " │   " + output.Bold(fmt.Sprintf("%d / 100", score)),
+			"  └───┘",
+		}
 		if len(penalties) > 0 {
-			fmt.Printf("  %s\n", output.Bold("Issues Found:"))
-			fmt.Println()
+			scoreLines = append(scoreLines, "")
 			for _, p := range penalties {
-				bar := strings.Repeat("*", p.penalty)
-				fmt.Printf("    %s %-24s %s %s\n",
-					output.Red(fmt.Sprintf("-%d", p.penalty)),
+				barLen := p.penalty
+				if barLen > 10 {
+					barLen = 10
+				}
+				bar := strings.Repeat("█", barLen)
+				scoreLines = append(scoreLines, fmt.Sprintf("  %s  %-22s  %-10s  %s",
+					output.Red(fmt.Sprintf("-%-2d", p.penalty)),
 					p.category,
 					output.Red(bar),
 					output.Dim(p.detail),
-				)
+				))
 			}
-			fmt.Println()
 		}
+		fmt.Println(output.Box("Score", scoreLines))
 
-		// Summary stats
-		fmt.Printf("  %s\n", output.Bold("Codebase:"))
-		fmt.Printf("    Components: %s  Files: %s  Imports: %s\n",
-			output.Cyan(fmt.Sprintf("%d", totalComponents)),
-			output.Cyan(fmt.Sprintf("%d", totalFiles)),
-			output.Cyan(fmt.Sprintf("%d", totalImports)),
-		)
+		// Codebase summary
 		fmt.Println()
+		codebaseLines := []string{
+			fmt.Sprintf(" %-13s %s    %-13s %s    %-13s %s",
+				output.Dim("Components:"), output.Cyan(fmt.Sprintf("%d", totalComponents)),
+				output.Dim("Files:"), output.Cyan(fmt.Sprintf("%d", totalFiles)),
+				output.Dim("Imports:"), output.Cyan(fmt.Sprintf("%d", totalImports))),
+		}
+		fmt.Println(output.Box("Codebase", codebaseLines))
 
-		if score >= 90 {
+		fmt.Println()
+		switch {
+		case score >= 90:
 			output.PrintSuccess("Excellent project health!")
-		} else if score >= 80 {
+		case score >= 80:
 			output.PrintSuccess("Good project health")
 			output.PrintHint("repokit lint for detailed issues")
-		} else if score >= 70 {
+		case score >= 70:
 			output.PrintWarning("Fair project health - some issues to address")
 			output.PrintHint("repokit lint for detailed issues")
-		} else if score >= 60 {
+		case score >= 60:
 			output.PrintWarning("Project health needs attention")
 			output.PrintHint("repokit lint for detailed issues")
 			output.PrintHint("repokit deps --circular to find circular deps")
-		} else {
+		default:
 			output.PrintError("Project health is critical")
 			output.PrintHint("repokit lint for detailed issues")
 			output.PrintHint("repokit deps --circular to find circular deps")

@@ -19,7 +19,10 @@
       "Bash(./repokit.exe:*)",
       "Bash(export PATH=\"$PATH:/c/Program Files/Go/bin:/c/Users/Usuario/go/bin\")",
       "Bash(cmd.exe /c start \"\" \"C:\\\\Users\\\\Usuario\\\\Documents\\\\PROGRAMACION\\\\cryptoapp\\\\.repokit\\\\report.html\")",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== status ===\"; .\\\\repokit.exe status; \"=== health ===\"; .\\\\repokit.exe health; \"=== lint ===\"; .\\\\repokit.exe lint; \"=== stats ===\"; .\\\\repokit.exe stats)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== diff --help ===\"; .\\\\repokit.exe diff --help; \"=== diff \\(smoke\\) ===\"; .\\\\repokit.exe diff main 2>&1 | Select-Object -First 40)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== analyze --html on this repo \\(which has 0 components — but tests gathering\\) ===\"; .\\\\repokit.exe analyze --html --quick 2>&1 | Select-Object -Last 8)"
     ]
   }
 }

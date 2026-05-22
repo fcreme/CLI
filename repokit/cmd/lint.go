@@ -61,9 +61,14 @@ Examples:
 		issues = append(issues, checkUnusedExports(ctx, s)...)
 		issues = append(issues, checkExcessiveImports(ctx, s, lintMaxImports)...)
 
+		fmt.Println()
+		fmt.Println(output.Banner("LINT REPORT", "repokit v"+Version))
+		fmt.Println()
+
 		if len(issues) == 0 {
-			fmt.Println()
-			output.PrintSuccess("No code quality issues detected")
+			fmt.Println(output.Box("Summary", []string{
+				" " + output.Green("✓") + " No code quality issues detected",
+			}))
 			fmt.Println()
 			return nil
 		}
@@ -76,27 +81,32 @@ Examples:
 			return issues[i].file < issues[j].file
 		})
 
-		fmt.Println()
-		table := &output.Table{
-			Headers: []string{"Severity", "Issue", "File", "Detail"},
-		}
+		// Build a single Issues box with all rows
+		var lines []string
 		for _, issue := range issues {
-			sev := output.Yellow("warn")
-			if issue.severity == 0 {
+			var sev string
+			switch issue.severity {
+			case 0:
 				sev = output.Red("error")
-			} else if issue.severity == 2 {
-				sev = output.Dim("info")
+			case 1:
+				sev = output.Yellow("warn ")
+			default:
+				sev = output.Dim("info ")
 			}
-			table.Rows = append(table.Rows, []string{
-				sev,
-				issue.rule,
-				issue.file,
-				issue.detail,
-			})
+			file := issue.file
+			if len(file) > 28 {
+				file = "..." + file[len(file)-25:]
+			}
+			detail := issue.detail
+			if len(detail) > 36 {
+				detail = detail[:33] + "..."
+			}
+			lines = append(lines, fmt.Sprintf(" %s  %-22s %-28s %s",
+				sev, issue.rule, output.Dim(file), detail))
 		}
-		table.Print()
+		fmt.Println(output.Box("Issues", lines))
 
-		// Summary
+		// Summary box
 		errors, warns, infos := 0, 0, 0
 		for _, i := range issues {
 			switch i.severity {
@@ -108,24 +118,14 @@ Examples:
 				infos++
 			}
 		}
+		summaryLine := fmt.Sprintf(" %d total   %s errors   %s warnings   %s info",
+			len(issues),
+			output.Red(fmt.Sprintf("%d", errors)),
+			output.Yellow(fmt.Sprintf("%d", warns)),
+			output.Dim(fmt.Sprintf("%d", infos)))
 		fmt.Println()
-		summary := fmt.Sprintf("%d issues", len(issues))
-		if errors > 0 {
-			summary += fmt.Sprintf(" (%s errors", output.Red(fmt.Sprintf("%d", errors)))
-		} else {
-			summary += " ("
-		}
-		if warns > 0 {
-			if errors > 0 {
-				summary += ", "
-			}
-			summary += fmt.Sprintf("%s warnings", output.Yellow(fmt.Sprintf("%d", warns)))
-		}
-		if infos > 0 {
-			summary += fmt.Sprintf(", %d info", infos)
-		}
-		summary += ")"
-		output.PrintWarning(summary)
+		fmt.Println(output.Box("Summary", []string{summaryLine}))
+		fmt.Println()
 		output.PrintHint("repokit show <id> to inspect a flagged component")
 		fmt.Println()
 
