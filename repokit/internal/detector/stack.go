@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/usuario/repokit/internal/store"
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/internal/store"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // DetectStack analyzes the repository to detect its technology stack.

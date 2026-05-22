@@ -1,6 +1,6 @@
 package main
 
-import "github.com/usuario/repokit/cmd"
+import "github.com/fcreme/CLI/repokit/cmd"
 
 func main() {
 	cmd.Execute()

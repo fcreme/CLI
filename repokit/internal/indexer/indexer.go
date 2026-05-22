@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/usuario/repokit/internal/detector"
-	"github.com/usuario/repokit/internal/store"
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/internal/detector"
+	"github.com/fcreme/CLI/repokit/internal/store"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 const maxFileSize = 1024 * 1024 // 1MB - skip minified/generated files

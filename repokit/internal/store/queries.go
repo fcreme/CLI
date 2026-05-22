@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // UpsertFile inserts or updates a file record. Returns the file ID.

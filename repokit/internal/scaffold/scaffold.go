@@ -9,8 +9,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/usuario/repokit/internal/store"
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/internal/store"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // ScaffoldRequest describes what to scaffold.

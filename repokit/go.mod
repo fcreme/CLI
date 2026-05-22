@@ -1,4 +1,4 @@
-module github.com/usuario/repokit
+module github.com/fcreme/CLI/repokit
 
 go 1.24.0
 

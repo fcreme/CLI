@@ -3,7 +3,7 @@ package indexer
 import (
 	"context"
 
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // AnalysisResult holds everything extracted from a single file.

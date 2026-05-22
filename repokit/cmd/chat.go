@@ -11,11 +11,11 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/usuario/repokit/internal/config"
-	"github.com/usuario/repokit/internal/output"
-	"github.com/usuario/repokit/internal/scaffold"
-	"github.com/usuario/repokit/internal/store"
-	"github.com/usuario/repokit/internal/suggest"
+	"github.com/fcreme/CLI/repokit/internal/config"
+	"github.com/fcreme/CLI/repokit/internal/output"
+	"github.com/fcreme/CLI/repokit/internal/scaffold"
+	"github.com/fcreme/CLI/repokit/internal/store"
+	"github.com/fcreme/CLI/repokit/internal/suggest"
 )
 
 var chatCmd = &cobra.Command{

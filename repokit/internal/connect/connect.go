@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/usuario/repokit/internal/config"
+	"github.com/fcreme/CLI/repokit/internal/config"
 )
 
 // Connect validates the given path or clones a git URL, then initializes .repokit.

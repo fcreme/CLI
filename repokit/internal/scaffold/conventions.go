@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // Conventions holds the detected patterns from an existing component.

@@ -27,8 +27,8 @@ repokit health          # Project health score
 Requires **Go 1.24.0+**. No C compiler needed.
 
 ```bash
-git clone https://github.com/usuario/repokit.git
-cd repokit
+git clone https://github.com/fcreme/CLI.git
+cd CLI/repokit
 go build -o repokit.exe
 ```
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/usuario/repokit/internal/parser"
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/internal/parser"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // ReactAnalyzer extracts React components, hooks, and TypeScript types from source files.

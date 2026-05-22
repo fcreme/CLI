@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/usuario/repokit/internal/output"
+	"github.com/fcreme/CLI/repokit/internal/output"
 )
 
 var (

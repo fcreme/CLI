@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/usuario/repokit/internal/store"
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/internal/store"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // DetectPatterns analyzes the indexed files to detect project conventions.

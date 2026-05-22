@@ -3,7 +3,7 @@ package detector
 import (
 	"strings"
 
-	"github.com/usuario/repokit/pkg/models"
+	"github.com/fcreme/CLI/repokit/pkg/models"
 )
 
 // TagResult holds a tag assignment with confidence.
