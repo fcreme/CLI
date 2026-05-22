@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/fcreme/CLI/repokit/internal/config"
 	"github.com/fcreme/CLI/repokit/internal/output"
@@ -140,29 +139,20 @@ func showGraphSummary(g *depGraph) error {
 		totalEdges += len(edges)
 	}
 
-	// Find most imported files
 	type fileCount struct {
 		file  string
 		count int
 	}
-	var mostImported []fileCount
+	var mostImported, mostImporting []fileCount
 	for file, importers := range g.reverse {
 		mostImported = append(mostImported, fileCount{file, len(importers)})
 	}
-	sort.Slice(mostImported, func(i, j int) bool {
-		return mostImported[i].count > mostImported[j].count
-	})
-
-	// Find most importing files
-	var mostImporting []fileCount
 	for file, imports := range g.forward {
 		mostImporting = append(mostImporting, fileCount{file, len(imports)})
 	}
-	sort.Slice(mostImporting, func(i, j int) bool {
-		return mostImporting[i].count > mostImporting[j].count
-	})
+	sort.Slice(mostImported, func(i, j int) bool { return mostImported[i].count > mostImported[j].count })
+	sort.Slice(mostImporting, func(i, j int) bool { return mostImporting[i].count > mostImporting[j].count })
 
-	// Files with no internal importers (leaf/entry files)
 	orphanCount := 0
 	for file := range g.allFiles {
 		if len(g.reverse[file]) == 0 && len(g.forward[file]) > 0 {
@@ -171,35 +161,55 @@ func showGraphSummary(g *depGraph) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("  %s\n", output.Bold("Dependency Graph Summary"))
-	fmt.Printf("    Files in graph:    %s\n", output.Cyan(fmt.Sprintf("%d", len(g.allFiles))))
-	fmt.Printf("    Internal imports:  %s\n", output.Cyan(fmt.Sprintf("%d", totalEdges)))
-	fmt.Printf("    Entry points:      %s\n", output.Cyan(fmt.Sprintf("%d", orphanCount)))
+	fmt.Println(output.Banner("DEPENDENCY GRAPH", fmt.Sprintf("%d files", len(g.allFiles))))
+	fmt.Println()
+
+	fmt.Println(output.Box("Summary", []string{
+		fmt.Sprintf(" %-20s %s", output.Dim("Files in graph:"), output.Cyan(fmt.Sprintf("%d", len(g.allFiles)))),
+		fmt.Sprintf(" %-20s %s", output.Dim("Internal imports:"), output.Cyan(fmt.Sprintf("%d", totalEdges))),
+		fmt.Sprintf(" %-20s %s", output.Dim("Entry points:"), output.Cyan(fmt.Sprintf("%d", orphanCount))),
+	}))
 
 	if len(mostImported) > 0 {
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Most Imported (hub files):"))
 		max := 8
 		if len(mostImported) < max {
 			max = len(mostImported)
 		}
+		maxC := mostImported[0].count
+		var lines []string
 		for _, fc := range mostImported[:max] {
-			bar := strings.Repeat("█", fc.count)
-			fmt.Printf("    %s %s %s\n", output.Cyan(fmt.Sprintf("%2d", fc.count)), color.New(color.FgGreen).Sprint(bar), fc.file)
+			file := fc.file
+			if len(file) > 32 {
+				file = "..." + file[len(file)-29:]
+			}
+			lines = append(lines, fmt.Sprintf(" %s  %-24s  %s",
+				output.Cyan(fmt.Sprintf("%3d", fc.count)),
+				output.Green(scaleBar(fc.count, maxC, 24)),
+				file))
 		}
+		fmt.Println()
+		fmt.Println(output.Box("Most Imported (hub files)", lines))
 	}
 
 	if len(mostImporting) > 0 {
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Most Dependencies (complex files):"))
 		max := 8
 		if len(mostImporting) < max {
 			max = len(mostImporting)
 		}
+		maxC := mostImporting[0].count
+		var lines []string
 		for _, fc := range mostImporting[:max] {
-			bar := strings.Repeat("█", fc.count)
-			fmt.Printf("    %s %s %s\n", output.Cyan(fmt.Sprintf("%2d", fc.count)), color.New(color.FgYellow).Sprint(bar), fc.file)
+			file := fc.file
+			if len(file) > 32 {
+				file = "..." + file[len(file)-29:]
+			}
+			lines = append(lines, fmt.Sprintf(" %s  %-24s  %s",
+				output.Cyan(fmt.Sprintf("%3d", fc.count)),
+				output.Yellow(scaleBar(fc.count, maxC, 24)),
+				file))
 		}
+		fmt.Println()
+		fmt.Println(output.Box("Most Dependencies (complex files)", lines))
 	}
 
 	fmt.Println()
@@ -267,18 +277,34 @@ func showOrphans(ctx context.Context, s *store.Store, g *depGraph) error {
 	sort.Strings(orphans)
 
 	fmt.Println()
+	fmt.Println(output.Banner("ORPHAN COMPONENTS", fmt.Sprintf("%d found", len(orphans))))
+	fmt.Println()
+
 	if len(orphans) == 0 {
-		output.PrintSuccess("No orphan components found - all components are imported somewhere")
+		fmt.Println(output.Box("Results", []string{
+			" " + output.Green("✓") + " All components are imported somewhere",
+		}))
+		fmt.Println()
 		return nil
 	}
 
-	fmt.Printf("  %s\n", output.Bold("Orphan Components (never imported internally):"))
-	fmt.Println()
-	for _, o := range orphans {
-		fmt.Printf("    %s %s\n", output.Yellow("●"), o)
+	var lines []string
+	maxShow := 20
+	if len(orphans) < maxShow {
+		maxShow = len(orphans)
 	}
+	for _, o := range orphans[:maxShow] {
+		entry := o
+		if len(entry) > 66 {
+			entry = entry[:63] + "..."
+		}
+		lines = append(lines, fmt.Sprintf(" %s %s", output.Yellow("●"), entry))
+	}
+	if len(orphans) > maxShow {
+		lines = append(lines, " "+output.Dim(fmt.Sprintf("... and %d more", len(orphans)-maxShow)))
+	}
+	fmt.Println(output.Box("Components Never Imported Internally", lines))
 	fmt.Println()
-	output.PrintInfo("%d components with no internal importers", len(orphans))
 	output.PrintInfo("These may be entry points, pages, or dead code")
 	fmt.Println()
 	return nil
@@ -288,26 +314,36 @@ func showCircular(g *depGraph) error {
 	cycles := detectCycles(g)
 
 	fmt.Println()
+	fmt.Println(output.Banner("CIRCULAR DEPENDENCIES", fmt.Sprintf("%d cycle(s)", len(cycles))))
+	fmt.Println()
+
 	if len(cycles) == 0 {
-		output.PrintSuccess("No circular dependencies detected")
+		fmt.Println(output.Box("Results", []string{
+			" " + output.Green("✓") + " No circular dependencies detected",
+		}))
 		fmt.Println()
 		return nil
 	}
 
-	fmt.Printf("  %s\n", output.Bold("Circular Dependencies:"))
-	fmt.Println()
+	var lines []string
 	for i, cycle := range cycles {
-		fmt.Printf("  %s Cycle %d:\n", output.Red("●"), i+1)
+		lines = append(lines, fmt.Sprintf(" %s Cycle %d", output.Red("●"), i+1))
 		for j, file := range cycle {
 			arrow := "→"
 			if j == len(cycle)-1 {
 				arrow = "↩"
 			}
-			fmt.Printf("      %s %s\n", arrow, file)
+			f := file
+			if len(f) > 60 {
+				f = "..." + f[len(f)-57:]
+			}
+			lines = append(lines, fmt.Sprintf("     %s %s", output.Red(arrow), f))
 		}
-		fmt.Println()
+		if i < len(cycles)-1 {
+			lines = append(lines, "")
+		}
 	}
-	output.PrintWarning("%d circular dependency chains detected", len(cycles))
+	fmt.Println(output.Box("Cycles", lines))
 	fmt.Println()
 	return nil
 }

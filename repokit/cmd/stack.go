@@ -44,30 +44,29 @@ state management, testing tools, and bundlers.`,
 			return err
 		}
 
+		fmt.Println()
+		fmt.Println(output.Banner("TECH STACK", fmt.Sprintf("%d detected", len(items))))
+		fmt.Println()
+
 		if len(items) == 0 {
-			output.PrintWarning("No technologies detected")
+			fmt.Println(output.Box("Stack", []string{" " + output.Dim("No technologies detected")}))
+			fmt.Println()
 			return nil
 		}
 
-		table := &output.Table{
-			Headers: []string{"Category", "Technology", "Version"},
-		}
+		var lines []string
 		for _, item := range items {
 			version := item.Version
 			if version == "" {
 				version = "-"
 			}
-			table.Rows = append(table.Rows, []string{
-				item.Category,
-				item.Name,
-				version,
-			})
+			lines = append(lines, fmt.Sprintf(" %-14s %-24s %s",
+				output.Dim(item.Category),
+				output.Cyan(item.Name),
+				output.Dim(version)))
 		}
-
+		fmt.Println(output.Box("Technologies", lines))
 		fmt.Println()
-		table.Print()
-		fmt.Println()
-		output.PrintSuccess("Detected %d technologies", len(items))
 		return nil
 	},
 }

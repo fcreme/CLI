@@ -86,20 +86,23 @@ Examples:
 		})
 
 		fmt.Println()
+		fmt.Println(output.Banner("DUPLICATE COMPONENTS", fmt.Sprintf("threshold %.0f%%", dupThreshold*100)))
+		fmt.Println()
+
 		if len(pairs) == 0 {
-			output.PrintSuccess("No similar components found (threshold: %.0f%%)", dupThreshold*100)
+			fmt.Println(output.Box("Results", []string{
+				" " + output.Green("✓") + " No similar components found",
+			}))
 			fmt.Println()
 			return nil
 		}
-
-		fmt.Printf("  %s\n", output.Bold("Similar Components:"))
-		fmt.Println()
 
 		maxShow := 15
 		if len(pairs) < maxShow {
 			maxShow = len(pairs)
 		}
 
+		var lines []string
 		for _, p := range pairs[:maxShow] {
 			pct := int(p.score * 100)
 			scoreColor := output.Yellow
@@ -108,20 +111,24 @@ Examples:
 			} else if pct < 50 {
 				scoreColor = output.Dim
 			}
-
-			fmt.Printf("  %s similarity\n", scoreColor(fmt.Sprintf("%d%%", pct)))
-			fmt.Printf("    %s %s\n", output.Cyan(fmt.Sprintf("#%-4d", p.a.id)), p.a.name)
-			fmt.Printf("    %s %s\n", output.Cyan(fmt.Sprintf("#%-4d", p.b.id)), p.b.name)
-			fmt.Printf("    %s\n", output.Dim(p.reason))
-			fmt.Println()
+			lines = append(lines, fmt.Sprintf(" %s  #%-4d %-18s ↔  #%-4d %-18s",
+				scoreColor(fmt.Sprintf("%3d%%", pct)),
+				p.a.id, p.a.name,
+				p.b.id, p.b.name))
+			if p.reason != "" {
+				reason := p.reason
+				if len(reason) > 60 {
+					reason = reason[:57] + "..."
+				}
+				lines = append(lines, "        "+output.Dim(reason))
+			}
 		}
-
 		if len(pairs) > maxShow {
-			fmt.Printf("  %s\n", output.Dim(fmt.Sprintf("... and %d more pairs", len(pairs)-maxShow)))
-			fmt.Println()
+			lines = append(lines, " "+output.Dim(fmt.Sprintf("... and %d more pairs", len(pairs)-maxShow)))
 		}
+		fmt.Println(output.Box(fmt.Sprintf("Similar Pairs (%d)", len(pairs)), lines))
 
-		output.PrintWarning("%d similar component pairs found", len(pairs))
+		fmt.Println()
 		output.PrintHint("repokit show <id> to inspect a component")
 		output.PrintHint("use --threshold 0.8 for stricter matching")
 		fmt.Println()

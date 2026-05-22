@@ -62,46 +62,51 @@ Examples:
 			return err
 		}
 
+		subtitle := query
+		if subtitle == "" {
+			subtitle = "all"
+		}
+		fmt.Println()
+		fmt.Println(output.Banner("COMPONENT SEARCH", subtitle))
+		fmt.Println()
+
 		if len(components) == 0 {
+			fmt.Println(output.Box("Results", []string{
+				" " + output.Dim("No components match this query."),
+			}))
 			fmt.Println()
 			if query != "" {
-				output.PrintWarning("No components found matching \"%s\"", query)
 				output.PrintHint("repokit find component \"\" to list all components")
 			} else {
-				output.PrintWarning("No components found. Is the project indexed?")
 				output.PrintHint("repokit index --force to re-index")
 			}
 			fmt.Println()
 			return nil
 		}
 
-		table := &output.Table{
-			Headers: []string{"ID", "Name", "Kind", "Path", "Export", "Usage"},
-		}
+		var lines []string
 		for _, c := range components {
-			tags := make([]string, 0)
-			for _, t := range c.Tags {
-				tags = append(tags, t.Name)
-			}
 			tagStr := ""
-			if len(tags) > 0 {
-				tagStr = " [" + strings.Join(tags, ", ") + "]"
+			if len(c.Tags) > 0 {
+				var tags []string
+				for _, t := range c.Tags {
+					tags = append(tags, t.Name)
+				}
+				tagStr = output.Dim(" [" + strings.Join(tags, ",") + "]")
 			}
-
-			table.Rows = append(table.Rows, []string{
-				fmt.Sprintf("%d", c.ID),
-				c.Name + tagStr,
-				string(c.Kind),
-				c.FilePath,
-				c.ExportType,
-				fmt.Sprintf("%d", c.UsageCount),
-			})
+			path := c.FilePath
+			if len(path) > 30 {
+				path = "..." + path[len(path)-27:]
+			}
+			lines = append(lines, fmt.Sprintf(" %s  %-18s %-14s %s%s",
+				output.Cyan(fmt.Sprintf("#%-4d", c.ID)),
+				c.Name,
+				output.Dim(string(c.Kind)),
+				output.Dim(path),
+				tagStr))
 		}
-
+		fmt.Println(output.Box(fmt.Sprintf("Results (%d)", len(components)), lines))
 		fmt.Println()
-		table.Print()
-		fmt.Println()
-		output.PrintSuccess("Found %d components", len(components))
 		output.PrintHint("repokit show <id> to see component details")
 		fmt.Println()
 		return nil

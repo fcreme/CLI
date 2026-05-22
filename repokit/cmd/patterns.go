@@ -43,10 +43,7 @@ Patterns are detected automatically during 'repokit index'.`,
 		}
 		defer rows.Close()
 
-		table := &output.Table{
-			Headers: []string{"Category", "Pattern", "Confidence"},
-		}
-
+		var lines []string
 		count := 0
 		for rows.Next() {
 			var kind, description string
@@ -54,23 +51,31 @@ Patterns are detected automatically during 'repokit index'.`,
 			if err := rows.Scan(&kind, &description, &confidence); err != nil {
 				continue
 			}
-			table.Rows = append(table.Rows, []string{
-				kind,
+			if len(description) > 40 {
+				description = description[:37] + "..."
+			}
+			lines = append(lines, fmt.Sprintf(" %-14s %-40s %s",
+				output.Dim(kind),
 				description,
-				fmt.Sprintf("%.0f%%", confidence*100),
-			})
+				output.Dim(fmt.Sprintf("(%.0f%%)", confidence*100))))
 			count++
 		}
 
+		fmt.Println()
+		fmt.Println(output.Banner("PROJECT PATTERNS", fmt.Sprintf("%d detected", count)))
+		fmt.Println()
+
 		if count == 0 {
-			output.PrintWarning("No patterns detected. Run 'repokit index' first.")
+			fmt.Println(output.Box("Patterns", []string{
+				" " + output.Dim("No patterns detected."),
+				" " + output.Dim("Run 'repokit index' first."),
+			}))
+			fmt.Println()
 			return nil
 		}
 
+		fmt.Println(output.Box("Detected Conventions", lines))
 		fmt.Println()
-		table.Print()
-		fmt.Println()
-		output.PrintSuccess("Detected %d patterns", count)
 		return nil
 	},
 }

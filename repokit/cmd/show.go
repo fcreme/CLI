@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/fcreme/CLI/repokit/internal/config"
 	"github.com/fcreme/CLI/repokit/internal/output"
@@ -58,30 +57,28 @@ Example:
 			return fmt.Errorf("component not found")
 		}
 
-		dim := color.New(color.Faint).SprintFunc()
-		bold := color.New(color.Bold).SprintFunc()
-		cyan := color.New(color.FgCyan).SprintFunc()
-		green := color.New(color.FgGreen).SprintFunc()
-		yellow := color.New(color.FgYellow).SprintFunc()
-
 		fmt.Println()
-		fmt.Printf("  %s %s\n", bold("Component:"), cyan(comp.Name))
-		fmt.Printf("  %s %s\n", bold("Kind:"), string(comp.Kind))
-		fmt.Printf("  %s %s\n", bold("File:"), comp.FilePath)
-		fmt.Printf("  %s %d-%d\n", bold("Lines:"), comp.LineStart, comp.LineEnd)
-		fmt.Printf("  %s %s\n", bold("Export:"), comp.ExportType)
-		fmt.Printf("  %s %d\n", bold("Usage count:"), comp.UsageCount)
+		fmt.Println(output.Banner("COMPONENT "+comp.Name, fmt.Sprintf("#%d", comp.ID)))
+		fmt.Println()
 
-		// Tags
+		// Identity box
+		idLines := []string{
+			fmt.Sprintf(" %-13s %s", output.Dim("Kind:"), output.Cyan(string(comp.Kind))),
+			fmt.Sprintf(" %-13s %s", output.Dim("File:"), comp.FilePath),
+			fmt.Sprintf(" %-13s %d - %d", output.Dim("Lines:"), comp.LineStart, comp.LineEnd),
+			fmt.Sprintf(" %-13s %s", output.Dim("Export:"), comp.ExportType),
+			fmt.Sprintf(" %-13s %d", output.Dim("Usage count:"), comp.UsageCount),
+		}
 		if len(comp.Tags) > 0 {
 			var tagStrs []string
 			for _, t := range comp.Tags {
-				tagStrs = append(tagStrs, green(t.Name))
+				tagStrs = append(tagStrs, output.Green(t.Name))
 			}
-			fmt.Printf("  %s %s\n", bold("Tags:"), strings.Join(tagStrs, ", "))
+			idLines = append(idLines, fmt.Sprintf(" %-13s %s", output.Dim("Tags:"), strings.Join(tagStrs, ", ")))
 		}
+		fmt.Println(output.Box("Identity", idLines))
 
-		// Props - query from the type_definitions + props tables
+		// Props box
 		propsName := comp.Name + "Props"
 		var tdID int64
 		var tdBody string
@@ -90,67 +87,81 @@ Example:
 			propsName, comp.FileID,
 		).Scan(&tdID, &tdBody)
 		if err == nil && tdBody != "" {
-			fmt.Println()
-			fmt.Printf("  %s\n", bold("Props ("+propsName+"):"))
-
-			// Query individual props
+			var propLines []string
 			propRows, err := s.DB().QueryContext(ctx,
 				"SELECT name, type_annotation, is_optional FROM props WHERE type_def_id = ?", tdID)
 			if err == nil {
-				defer propRows.Close()
 				for propRows.Next() {
 					var name, typeAnn string
 					var isOptional bool
-					if err := propRows.Scan(&name, &typeAnn, &isOptional); err == nil {
-						opt := ""
+					if propRows.Scan(&name, &typeAnn, &isOptional) == nil {
+						opt := " "
 						if isOptional {
-							opt = yellow("?")
+							opt = output.Yellow("?")
 						}
-						fmt.Printf("    %s%s: %s\n", name, opt, dim(typeAnn))
+						if len(typeAnn) > 38 {
+							typeAnn = typeAnn[:35] + "..."
+						}
+						propLines = append(propLines, fmt.Sprintf(" %-22s%s %s", name, opt, output.Dim(typeAnn)))
 					}
 				}
+				propRows.Close()
+			}
+			if len(propLines) > 0 {
+				fmt.Println()
+				fmt.Println(output.Box("Props ("+propsName+")", propLines))
 			}
 		}
 
-		// Imports for this file
+		// Imports box
 		importRows, err := s.DB().QueryContext(ctx,
 			"SELECT source_path, imported_names, is_external FROM imports WHERE file_id = ? ORDER BY is_external, source_path",
 			comp.FileID)
 		if err == nil {
-			defer importRows.Close()
-			fmt.Println()
-			fmt.Printf("  %s\n", bold("Imports:"))
+			var impLines []string
 			for importRows.Next() {
 				var source, names string
 				var isExternal bool
-				if err := importRows.Scan(&source, &names, &isExternal); err == nil {
-					prefix := dim("  local")
+				if importRows.Scan(&source, &names, &isExternal) == nil {
+					tag := output.Dim("local")
 					if isExternal {
-						prefix = dim("  pkg  ")
+						tag = output.Dim("pkg  ")
 					}
-					fmt.Printf("    %s  %s  %s\n", prefix, cyan(source), dim(names))
+					if len(source) > 32 {
+						source = source[:29] + "..."
+					}
+					if len(names) > 28 {
+						names = names[:25] + "..."
+					}
+					impLines = append(impLines, fmt.Sprintf(" %s  %-32s %s",
+						tag, output.Cyan(source), output.Dim(names)))
 				}
+			}
+			importRows.Close()
+			if len(impLines) > 0 {
+				fmt.Println()
+				fmt.Println(output.Box("Imports", impLines))
 			}
 		}
 
-		// Source code preview
+		// Source preview (outside box — lines can be wider than 70)
 		if comp.RawSource != "" {
 			fmt.Println()
-			fmt.Printf("  %s\n", bold("Source preview:"))
-			fmt.Println(dim("  " + strings.Repeat("-", 60)))
+			fmt.Printf("  %s\n", output.Bold("Source preview:"))
+			fmt.Println(output.Dim("  " + strings.Repeat("─", 70)))
 			lines := strings.Split(comp.RawSource, "\n")
 			maxLines := 25
 			if len(lines) > maxLines {
 				for i := 0; i < maxLines; i++ {
-					fmt.Printf("  %s %s\n", dim(fmt.Sprintf("%3d", comp.LineStart+i)), lines[i])
+					fmt.Printf("  %s  %s\n", output.Dim(fmt.Sprintf("%4d", comp.LineStart+i)), lines[i])
 				}
-				fmt.Printf("  %s\n", dim(fmt.Sprintf("  ... +%d more lines", len(lines)-maxLines)))
+				fmt.Printf("  %s\n", output.Dim(fmt.Sprintf("       ... +%d more lines", len(lines)-maxLines)))
 			} else {
 				for i, line := range lines {
-					fmt.Printf("  %s %s\n", dim(fmt.Sprintf("%3d", comp.LineStart+i)), line)
+					fmt.Printf("  %s  %s\n", output.Dim(fmt.Sprintf("%4d", comp.LineStart+i)), line)
 				}
 			}
-			fmt.Println(dim("  " + strings.Repeat("-", 60)))
+			fmt.Println(output.Dim("  " + strings.Repeat("─", 70)))
 		}
 
 		fmt.Println()

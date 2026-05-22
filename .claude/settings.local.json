@@ -22,7 +22,8 @@
       "Bash(wc:*)",
       "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== status ===\"; .\\\\repokit.exe status; \"=== health ===\"; .\\\\repokit.exe health; \"=== lint ===\"; .\\\\repokit.exe lint; \"=== stats ===\"; .\\\\repokit.exe stats)",
       "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== diff --help ===\"; .\\\\repokit.exe diff --help; \"=== diff \\(smoke\\) ===\"; .\\\\repokit.exe diff main 2>&1 | Select-Object -First 40)",
-      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== analyze --html on this repo \\(which has 0 components — but tests gathering\\) ===\"; .\\\\repokit.exe analyze --html --quick 2>&1 | Select-Object -Last 8)"
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== analyze --html on this repo \\(which has 0 components — but tests gathering\\) ===\"; .\\\\repokit.exe analyze --html --quick 2>&1 | Select-Object -Last 8)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; & $go build -o repokit.exe .; if \\($LASTEXITCODE -ne 0\\) { \"BUILD FAILED\"; exit 1 }; \"BUILD OK\"; \"=== stack ===\"; .\\\\repokit.exe stack; \"=== patterns ===\"; .\\\\repokit.exe patterns; \"=== find ===\"; .\\\\repokit.exe find component \"\"; \"=== projects ===\"; .\\\\repokit.exe projects; \"=== duplicates ===\"; .\\\\repokit.exe duplicates; \"=== deps \\(default\\) ===\"; .\\\\repokit.exe deps; \"=== deps --circular ===\"; .\\\\repokit.exe deps --circular)"
     ]
   }
 }

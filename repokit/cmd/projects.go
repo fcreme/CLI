@@ -24,36 +24,43 @@ Examples:
 		reg := config.LoadProjects()
 		active := config.GetActiveProject()
 
+		fmt.Println()
+		fmt.Println(output.Banner("CONNECTED PROJECTS", fmt.Sprintf("%d total", len(reg.Projects))))
+		fmt.Println()
+
 		if len(reg.Projects) == 0 {
-			fmt.Println()
-			output.PrintWarning("No projects connected yet")
-			output.PrintHint("repokit connect <path> to connect a project")
+			fmt.Println(output.Box("Empty", []string{
+				" " + output.Dim("No projects connected yet."),
+				" " + output.Dim("Run 'repokit connect <path>' to connect one."),
+			}))
 			fmt.Println()
 			return
 		}
 
-		fmt.Println()
-		fmt.Printf("  %s\n", output.Bold("Connected Projects:"))
-		fmt.Println()
+		var lines []string
 		for i, p := range reg.Projects {
 			marker := "  "
 			name := p.Name
 			if p.Path == active {
-				marker = output.Green("->")
+				marker = output.Green("→ ")
 				name = output.Green(p.Name)
 			}
-			valid := output.Green("ok")
+			status := output.Green("ok")
 			if !config.Exists(p.Path) {
-				valid = output.Red("missing")
+				status = output.Red("missing")
 			}
-			fmt.Printf("  %s %s  %-20s  %s  %s\n",
+			path := p.Path
+			if len(path) > 36 {
+				path = "..." + path[len(path)-33:]
+			}
+			lines = append(lines, fmt.Sprintf(" %s%s  %-18s %-36s %s",
 				marker,
 				output.Dim(fmt.Sprintf("[%d]", i+1)),
 				name,
-				output.Dim(p.Path),
-				valid,
-			)
+				output.Dim(path),
+				status))
 		}
+		fmt.Println(output.Box("Projects", lines))
 		fmt.Println()
 		output.PrintHint("repokit switch <number> to change active project")
 		fmt.Println()
